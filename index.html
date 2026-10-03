@@ -1288,79 +1288,46 @@ async function uploadToCloudinary(fileData, resourceType = 'image') {
 }
 
 async function sharePhoto() {
+  const shareStatus = document.createElement('div');
+  shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
+  shareStatus.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
+      <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan tautan WhatsApp...</b>
+      <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto ke server...</div>
+      <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
+    </div>`;
+  document.body.appendChild(shareStatus);
+
   try {
-    // Buat file foto dari canvas
+    // 1. Unggah foto ke Cloudinary terlebih dahulu untuk mendapatkan URL publik
     const data = getData();
-    const arr = data.split(',');
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) { u8arr[n] = bstr.charCodeAt(n); }
-    const photoFile = new File([u8arr], 'UKM-MATAF-Photo.jpg', { type: mime });
+    const photoUrl = await uploadToCloudinary(data, 'image');
+    
+    if (shareStatus.parentNode) shareStatus.remove();
 
-    // Siapkan array files (utamakan foto saja atau gabung video jika didukung stabil)
-    let filesArray = [photoFile];
-
-    // Di mobile, terkadang melampirkan video webm via web share sering gagal di beberapa aplikasi chat.
-    // Kita cek apakah ada video dan apakah perangkat mendukung file sharing multi-file.
-    if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
-      const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
-      const videoFile = new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' });
-      // Coba masukkan video jika didukung
-      filesArray.push(videoFile);
+    // 2. Susun format pesan WhatsApp secara lengkap dan aman
+    let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
+    waMsg += '🖼️ *Link Foto Kamu:*\n' + photoUrl + '\n';
+    if (state.videoUrl) {
+      waMsg += '\n🎬 _Video rekaman photobooth tersedia, silakan unduh melalui tombol unduh di web ya!_\n';
     }
+    waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
 
-    // Coba Web Share API
-    if (navigator.share && navigator.canShare) {
-      // 1. Coba share dengan semua file (foto + video)
-      if (navigator.canShare({ files: filesArray })) {
-        await navigator.share({ files: filesArray });
-        return;
-      }
-      
-      // 2. Jika multi-file ditolak, coba bagikan fotonya saja (agar tidak gagal total di mobile)
-      const photoOnly = [photoFile];
-      if (navigator.canShare({ files: photoOnly })) {
-        await navigator.share({ 
-          files: photoOnly,
-          title: 'Foto Photobooth MATAF UMC 2026',
-          text: '📸 Foto Booth UKM Computer Education — MATAF UMC 2026'
-        });
-        return;
-      }
-    }
-
-    // Fallback: Jika Web Share API sama sekali tidak didukung/gagal, upload ke Cloudinary lalu buka WhatsApp
-    const shareStatus = document.createElement('div');
-    shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
-    shareStatus.innerHTML = `
-      <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-        <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
-        <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan tautan untuk dibagikan...</b>
-        <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah ke server...</div>
-        <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
-      </div>`;
-    document.body.appendChild(shareStatus);
-
-    try {
-      const photoUrl = await uploadToCloudinary(data, 'image');
-      if (shareStatus.parentNode) shareStatus.remove();
-
-      let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
-      waMsg += '🖼️ Lihat foto kamu di sini:\n' + photoUrl + '\n';
-      if (state.videoUrl) {
-        waMsg += '\n🎬 _Video rekaman tersedia, silakan unduh langsung dari galeri ya!_\n';
-      }
-      waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
-      window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg), '_blank');
-    } catch (uploadErr) {
-      if (shareStatus.parentNode) shareStatus.remove();
-      throw uploadErr;
-    }
+    // 3. Buka WhatsApp secara langsung dengan teks yang terenkripsi aman agar tidak kosong di mobile
+    const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg);
+    
+    // Gunakan elemen <a> tersembunyi atau window.open agar didukung penuh oleh browser mobile
+    const a = document.createElement('a');
+    a.href = waUrl;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
   } catch (e) {
-    if (e.name !== 'AbortError') alert("❌ Bagikan gagal:\n" + e.message);
+    if (shareStatus.parentNode) shareStatus.remove();
+    alert("❌ Gagal membagikan foto ke WhatsApp:\n" + e.message);
   }
 }
 
