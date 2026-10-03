@@ -1172,7 +1172,7 @@ async function showFinal() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
       <button class="btn-main btn-green" onclick="downloadPhoto()">⬇ Simpan Foto</button>
       ${state.videoUrl ? `<button class="btn-main btn-orange" onclick="downloadVideo()">📹 Simpan Video</button>` : ''}
-      <button class="btn-main btn-outline" onclick="sharePhoto()">📤 Bagikan (Foto & Video)</button>
+      <button class="btn-main btn-outline" onclick="sharePhoto()">📤 Bagikan</button>
       <button class="btn-main btn-outline" onclick="makeQR()">📱 Buat Link & QR Code</button>
       <button class="btn-main btn-outline" onclick="resetToStart()">📷 Buat Foto Baru</button>
     </div>
@@ -1339,7 +1339,7 @@ async function sharePhoto() {
     let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
     waMsg += '🖼️ *Link Foto Kamu:*\n' + photoUrl + '\n';
     if (state.videoUrl) {
-      waMsg += '\n🎬 _Video rekaman photobooth tersedia, silakan unduh melalui tombol unduh di web ya!_\n';
+      waMsg += '\n🎬 _Video rekaman photobooth tersedia, silakan unduh melalui tombol Simpan Video di web ya!_\n';
     }
     waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
 
