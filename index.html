@@ -1290,56 +1290,27 @@ async function uploadToCloudinary(fileData, resourceType = 'image') {
 async function sharePhoto() {
   try {
     const data = getData();
-    const arr = data.split(',');
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    const photoFile = new File([u8arr], 'UKM-Photo.jpg', { type: mime });
-    const filesArray = [photoFile];
 
-    if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
-      const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
-      filesArray.push(new File([vBlob], 'UKM-LiveVideo.webm', { type: 'video/webm' }));
-    }
-
-    // 1) Coba Web Share API dengan file (HP yang support)
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: filesArray })) {
-      await navigator.share({ 
-        title: 'Foto & Video Booth UKM', 
-        text: 'Berikut hasil foto dan live video dari MATAF UMC 2026!', 
-        files: filesArray 
-      });
-      return;
-    }
-
-    // 2) Fallback: Upload ke Cloudinary lalu kirim link via WhatsApp
+    // Tampilkan loading overlay
     const shareStatus = document.createElement('div');
     shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
     shareStatus.innerHTML = `
       <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
         <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
-        <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan file untuk dibagikan...</b>
-        <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto...</div>
+        <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan foto untuk dibagikan...</b>
+        <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto ke server...</div>
         <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
       </div>`;
     document.body.appendChild(shareStatus);
 
-    let photoUrl = '';
-    let videoUrl = '';
-
     try {
-      // Upload foto saja ke Cloudinary (video terlalu besar untuk upload gratis)
-      const progressEl = document.getElementById('shareProgress');
-      photoUrl = await uploadToCloudinary(data, 'image');
+      // Upload foto ke Cloudinary
+      const photoUrl = await uploadToCloudinary(data, 'image');
 
       // Hapus loading overlay
       if (shareStatus.parentNode) shareStatus.remove();
 
-      // Buat pesan WhatsApp dengan link foto
+      // Buat pesan WhatsApp dengan link foto langsung
       let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
       waMsg += '🖼️ Lihat foto kamu di sini:\n' + photoUrl + '\n';
       if (state.videoUrl) {
