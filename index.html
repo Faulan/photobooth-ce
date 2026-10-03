@@ -1289,9 +1289,41 @@ async function uploadToCloudinary(fileData, resourceType = 'image') {
 
 async function sharePhoto() {
   try {
+    // Buat file foto dari canvas
     const data = getData();
+    const arr = data.split(',');
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) { u8arr[n] = bstr.charCodeAt(n); }
+    const photoFile = new File([u8arr], 'UKM-MATAF-Photo.jpg', { type: mime });
 
-    // Tampilkan loading overlay
+    // Siapkan array files
+    const filesArray = [photoFile];
+
+    // Tambahkan video jika ada
+    if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
+      const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
+      filesArray.push(new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' }));
+    }
+
+    // Coba Web Share API dengan FILES SAJA (tanpa text agar WA HP langsung kirim file)
+    if (navigator.share && navigator.canShare) {
+      // Cek apakah bisa share dengan files
+      if (navigator.canShare({ files: filesArray })) {
+        await navigator.share({ files: filesArray });
+        return;
+      }
+      // Kalau files tidak didukung, coba foto saja tanpa video
+      const photoOnly = [photoFile];
+      if (navigator.canShare({ files: photoOnly })) {
+        await navigator.share({ files: photoOnly });
+        return;
+      }
+    }
+
+    // Fallback: Upload ke Cloudinary lalu kirim link via WhatsApp
     const shareStatus = document.createElement('div');
     shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
     shareStatus.innerHTML = `
@@ -1304,22 +1336,16 @@ async function sharePhoto() {
     document.body.appendChild(shareStatus);
 
     try {
-      // Upload foto ke Cloudinary
       const photoUrl = await uploadToCloudinary(data, 'image');
-
-      // Hapus loading overlay
       if (shareStatus.parentNode) shareStatus.remove();
 
-      // Buat pesan WhatsApp dengan link foto langsung
       let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
       waMsg += '🖼️ Lihat foto kamu di sini:\n' + photoUrl + '\n';
       if (state.videoUrl) {
         waMsg += '\n🎬 _Video rekaman tersedia, silakan minta langsung dari booth ya!_\n';
       }
       waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
-
       window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg), '_blank');
-
     } catch (uploadErr) {
       if (shareStatus.parentNode) shareStatus.remove();
       throw uploadErr;
