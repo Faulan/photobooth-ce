@@ -1288,6 +1288,37 @@ async function uploadToCloudinary(fileData, resourceType = 'image') {
 }
 
 async function sharePhoto() {
+  // Deteksi apakah pengguna menggunakan perangkat mobile (HP/Tablet)
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // Jika di DESKTOP: Gunakan fitur berbagi file multi-file (foto + video) seperti sebelumnya
+  if (!isMobile && navigator.share && navigator.canShare) {
+    try {
+      const data = getData();
+      const arr = data.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) { u8arr[n] = bstr.charCodeAt(n); }
+      const photoFile = new File([u8arr], 'UKM-MATAF-Photo.jpg', { type: mime });
+      const filesArray = [photoFile];
+
+      if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
+        const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
+        filesArray.push(new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' }));
+      }
+
+      if (navigator.canShare({ files: filesArray })) {
+        await navigator.share({ files: filesArray });
+        return;
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return; // Batal dibagikan oleh user
+    }
+  }
+
+  // Jika di MOBILE (atau jika desktop menolak multi-file): Gunakan metode WhatsApp Tautan + Cloudinary
   const shareStatus = document.createElement('div');
   shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
   shareStatus.innerHTML = `
@@ -1300,13 +1331,11 @@ async function sharePhoto() {
   document.body.appendChild(shareStatus);
 
   try {
-    // 1. Unggah foto ke Cloudinary terlebih dahulu untuk mendapatkan URL publik
     const data = getData();
     const photoUrl = await uploadToCloudinary(data, 'image');
     
     if (shareStatus.parentNode) shareStatus.remove();
 
-    // 2. Susun format pesan WhatsApp secara lengkap dan aman
     let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
     waMsg += '🖼️ *Link Foto Kamu:*\n' + photoUrl + '\n';
     if (state.videoUrl) {
@@ -1314,10 +1343,8 @@ async function sharePhoto() {
     }
     waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
 
-    // 3. Buka WhatsApp secara langsung dengan teks yang terenkripsi aman agar tidak kosong di mobile
     const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg);
     
-    // Gunakan elemen <a> tersembunyi atau window.open agar didukung penuh oleh browser mobile
     const a = document.createElement('a');
     a.href = waUrl;
     a.target = '_blank';
