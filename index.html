@@ -1299,38 +1299,46 @@ async function sharePhoto() {
     while (n--) { u8arr[n] = bstr.charCodeAt(n); }
     const photoFile = new File([u8arr], 'UKM-MATAF-Photo.jpg', { type: mime });
 
-    // Siapkan array files
-    const filesArray = [photoFile];
+    // Siapkan array files (utamakan foto saja atau gabung video jika didukung stabil)
+    let filesArray = [photoFile];
 
-    // Tambahkan video jika ada
+    // Di mobile, terkadang melampirkan video webm via web share sering gagal di beberapa aplikasi chat.
+    // Kita cek apakah ada video dan apakah perangkat mendukung file sharing multi-file.
     if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
       const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
-      filesArray.push(new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' }));
+      const videoFile = new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' });
+      // Coba masukkan video jika didukung
+      filesArray.push(videoFile);
     }
 
-    // Coba Web Share API dengan FILES SAJA (tanpa text agar WA HP langsung kirim file)
+    // Coba Web Share API
     if (navigator.share && navigator.canShare) {
-      // Cek apakah bisa share dengan files
+      // 1. Coba share dengan semua file (foto + video)
       if (navigator.canShare({ files: filesArray })) {
         await navigator.share({ files: filesArray });
         return;
       }
-      // Kalau files tidak didukung, coba foto saja tanpa video
+      
+      // 2. Jika multi-file ditolak, coba bagikan fotonya saja (agar tidak gagal total di mobile)
       const photoOnly = [photoFile];
       if (navigator.canShare({ files: photoOnly })) {
-        await navigator.share({ files: photoOnly });
+        await navigator.share({ 
+          files: photoOnly,
+          title: 'Foto Photobooth MATAF UMC 2026',
+          text: '📸 Foto Booth UKM Computer Education — MATAF UMC 2026'
+        });
         return;
       }
     }
 
-    // Fallback: Upload ke Cloudinary lalu kirim link via WhatsApp
+    // Fallback: Jika Web Share API sama sekali tidak didukung/gagal, upload ke Cloudinary lalu buka WhatsApp
     const shareStatus = document.createElement('div');
     shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
     shareStatus.innerHTML = `
       <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
         <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
-        <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan foto untuk dibagikan...</b>
-        <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto ke server...</div>
+        <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan tautan untuk dibagikan...</b>
+        <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah ke server...</div>
         <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
       </div>`;
     document.body.appendChild(shareStatus);
@@ -1342,7 +1350,7 @@ async function sharePhoto() {
       let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
       waMsg += '🖼️ Lihat foto kamu di sini:\n' + photoUrl + '\n';
       if (state.videoUrl) {
-        waMsg += '\n🎬 _Video rekaman tersedia, silakan minta langsung dari booth ya!_\n';
+        waMsg += '\n🎬 _Video rekaman tersedia, silakan unduh langsung dari galeri ya!_\n';
       }
       waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
       window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg), '_blank');
