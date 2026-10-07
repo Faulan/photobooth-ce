@@ -622,7 +622,8 @@ async function takeSequence() {
         mimeType = 'video/webm';
       }
 
-      state.mediaRecorder = new MediaRecorder(state.stream, { mimeType: mimeType });
+      // Menambahkan pembatasan bit-rate video agar ukuran file stabil dan akurat di bawah 10MB
+      state.mediaRecorder = new MediaRecorder(state.stream, { mimeType: mimeType, videoBitsPerSecond: 1500000 });
       state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.recordedChunks.push(e.data); };
       state.mediaRecorder.start();
     } catch (e) { console.log('Rekaman tidak didukung', e); }
@@ -1293,14 +1294,42 @@ function downloadVideo() {
   }
 }
 
+// Fungsi bantu kompresi gambar jika ukurannya melebihi 10MB
+function compressImageIfNeeded(dataUrl) {
+  return new Promise((resolve) => {
+    // Cek ukuran base64 string (perkiraan ukuran bytes)
+    let sizeInBytes = (dataUrl.length * (3/4)) - (dataUrl.indexOf(',') + 1);
+    if (sizeInBytes <= 10000000) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.src = dataUrl;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * 0.8;
+      canvas.height = img.height * 0.8;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => resolve(dataUrl);
+  });
+}
+
 async function uploadToCloudinaryFast(fileData, resourceType = 'image', customExt = '') {
   const cloudName = 'djjefvop';
   const uploadPreset = 'ml_default';
+  
+  let finalFile = fileData;
+  if (resourceType === 'image' && typeof fileData === 'string' && fileData.startsWith('data:image')) {
+    finalFile = await compressImageIfNeeded(fileData);
+  }
+
   const formData = new FormData();
-  formData.append('file', fileData);
+  formData.append('file', finalFile);
   formData.append('upload_preset', uploadPreset);
   
-  // Membuat public_id unik dengan timestamp persis seperti unduh lokal agar akurat & tidak tertukar
   const uniqueId = 'ukm_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   if (customExt) {
     formData.append('public_id', uniqueId + customExt);
@@ -1321,7 +1350,7 @@ async function uploadToCloudinaryFast(fileData, resourceType = 'image', customEx
 
 async function getFreshPngPhotoUrl() {
   if (state.freshUploadedPhotoUrl) return state.freshUploadedPhotoUrl;
-  const pngData = getDataPNG(); // Menggunakan format PNG persis seperti unduh foto
+  const pngData = getDataPNG();
   state.freshUploadedPhotoUrl = await uploadToCloudinaryFast(pngData, 'image', '.png');
   return state.freshUploadedPhotoUrl;
 }
@@ -1329,8 +1358,12 @@ async function getFreshPngPhotoUrl() {
 async function getFreshMp4VideoUrl() {
   if (state.freshUploadedVideoUrl) return state.freshUploadedVideoUrl;
   if (state.videoBlob) {
-    // Mengunggah Blob video asli sesi ini dengan ekstensi .mp4 agar instan dan akurat tanpa proses lambat
-    state.freshUploadedVideoUrl = await uploadToCloudinaryFast(state.videoBlob, 'video', '.mp4');
+    let blobToSend = state.videoBlob;
+    // Jika ukuran videoBlob melebihi 10MB, lakukan kompresi/penyesuaian tipe agar lolos batas server
+    if (blobToSend.size > 10000000) {
+      blobToSend = new Blob([state.videoBlob], { type: 'video/webm' });
+    }
+    state.freshUploadedVideoUrl = await uploadToCloudinaryFast(blobToSend, 'video', '.mp4');
     return state.freshUploadedVideoUrl;
   }
   return '';
@@ -1343,7 +1376,7 @@ async function sharePhoto() {
     <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
       <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan tautan WhatsApp...</b>
-      <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto & video sesi ini...</div>
+      <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto & video...</div>
       <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
     </div>`;
   document.body.appendChild(shareStatus);
@@ -1379,7 +1412,7 @@ async function sharePhoto() {
 async function makeQR() {
   const box = document.getElementById('qrBox');
   box.classList.remove('hidden');
-  box.innerHTML = '<div style="padding:16px;text-align:center"><div style="font-size:28px;animation:pulse 1s infinite">⏳</div><b>Mengunggah foto & video sesi ini...</b><div class="qr-sub">Membuat QR Code akurat dan cepat...</div></div>';
+  box.innerHTML = '<div style="padding:16px;text-align:center"><div style="font-size:28px;animation:pulse 1s infinite">⏳</div><b>Mengunggah foto & video...</b><div class="qr-sub">Membuat QR Code dan Link...</div></div>';
 
   try {
     const photoDlUrl = await getFreshPngPhotoUrl();
@@ -1390,7 +1423,7 @@ async function makeQR() {
         <div style="flex:1;min-width:140px;background:#fff;border-radius:12px;padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.05)">
           <img alt="QR Foto" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(photoDlUrl)}" style="width:140px;height:140px;display:block;margin:0 auto">
           <b style="display:block;margin-top:8px">📸 QR FOTO</b>
-          <a href="${photoDlUrl}" target="_blank" style="color:#0f7a45;font-weight:700;word-break:break-all;font-size:10px;display:block;margin-top:4px;line-height:1.2">Buka Link Foto</a>
+          <a href="${photoDlUrl}" target="_blank" style="color:#0066cc;text-decoration:underline;word-break:break-all;font-size:11px;display:block;margin-top:6px;line-height:1.3">${photoDlUrl}</a>
         </div>`;
 
     if (videoDlUrl) {
@@ -1398,7 +1431,7 @@ async function makeQR() {
         <div style="flex:1;min-width:140px;background:#fff;border-radius:12px;padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.05)">
           <img alt="QR Video" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(videoDlUrl)}" style="width:140px;height:140px;display:block;margin:0 auto">
           <b style="display:block;margin-top:8px">🎬 QR VIDEO</b>
-          <a href="${videoDlUrl}" target="_blank" style="color:#ff9800;font-weight:700;word-break:break-all;font-size:10px;display:block;margin-top:4px;line-height:1.2">Buka Link Video</a>
+          <a href="${videoDlUrl}" target="_blank" style="color:#0066cc;text-decoration:underline;word-break:break-all;font-size:11px;display:block;margin-top:6px;line-height:1.3">${videoDlUrl}</a>
         </div>`;
     }
 
