@@ -210,7 +210,6 @@ button:active{transform:scale(.97)}
   background:#f1f8e9;border:2px solid #c8e6c9;border-radius:var(--radius);
   padding:14px;text-align:center;margin-top:12px;word-break:break-all;
 }
-.qr-box img{width:160px;height:160px;border-radius:var(--radius-xs);border:3px solid #c8e6c9;max-width:100%}
 .qr-box b{display:block;font-size:13px;margin-top:8px;color:var(--green-dark)}
 .qr-box .qr-sub{font-size:11px;color:var(--muted);margin-top:4px;font-style:italic}
 
@@ -395,12 +394,12 @@ button:active{transform:scale(.97)}
 <script>
 // DAFTAR SELURUH BINGKAI SESUAI DENGAN FOLDER 'frames'
 const ALL_FRAMES = [
-  "Frame_01_A.png", "Frame_01_B.png", "Frame_01_C.png", "Frame_01_D.png", "Frame_01_E.png",
-  "Frame_02_A.png", "Frame_02_B.png", "Frame_02_C.png",
-  "Frame_03_A.png", "Frame_03_B.png",
-  "Frame_04_A.png", "Frame_04_B.png",
-  "Frame_05_A.png", "Frame_05_B.png",
-  "Frame_06_A.png", "Frame_06_B.png", "Frame_06_C.png", "Frame_06_D.png"
+  "Frame_01_A.png", "Frame_01_B.png", "Frame_01_C.png", "Frame_01_D.png", "Frame_01_E.png", // 0-4
+  "Frame_02_A.png", "Frame_02_B.png", "Frame_02_C.png", // 5-7
+  "Frame_03_A.png", "Frame_03_B.png", // 8-9
+  "Frame_04_A.png", "Frame_04_B.png", // 10-11
+  "Frame_05_A.png", "Frame_05_B.png", // 12-13
+  "Frame_06_A.png", "Frame_06_B.png", "Frame_06_C.png", "Frame_06_D.png" // 14-17
 ].map(f => `frames/${f}`);
 
 const SLOT_MAP={
@@ -433,7 +432,7 @@ const SLOT_MAP={
 const state = {
   step: 0,
   count: 4,
-  frame: 11, // Menyesuaikan indeks default awal
+  frame: 10,
   photos: [],          
   assignedPhotos: [],  
   stream: null,
@@ -442,8 +441,10 @@ const state = {
   slotMappingIndex: null,
   mediaRecorder: null,
   recordedChunks: [],
+  videoBlob: null,     
   videoUrl: null,
-  uploadedUrl: null
+  freshUploadedVideoUrl: null,
+  freshUploadedPhotoUrl: null
 };
 
 const app = document.getElementById('app');
@@ -482,13 +483,13 @@ function renderStart() {
         <img src="Maskot CE HD.jpg" alt="Maskot Robot">
       </div>
       <h2>Abadikan Momenmu!</h2>
-      <p>Photo Booth digital <b>UKM Computer Education</b> untuk MATAF UMC 2026.<br>Ambil foto, pilih bingkai, simpan, atau bagikan secara otomatis.</p>
+      <p>Photo Booth digital <b>UKM Computer Education</b> untuk MATAF UMC 2026.<br>Ambil foto, pilih bingkai, simpan, cetak, atau bagikan secara otomatis.</p>
       <button class="start-btn" onclick="chooseCount()">📷 MULAI PHOTO BOOTH</button>
       <div class="start-features">
-        <span class="start-feat">📸 Foto Otomatis</span>
-        <span class="start-feat">🖼 Total 21 Bingkai</span>
-        <span class="start-feat">📱 QR Code</span>
-        <span class="start-feat">🎬 Live Video</span>
+        <span class="start-feat">📸 Foto PNG Otomatis</span>
+        <span class="start-feat">🖼 Total 19 Bingkai</span>
+        <span class="start-feat">📱 QR Code (Foto & Video)</span>
+        <span class="start-feat">🖨️ Cetak Foto</span>
       </div>
     </div>
   </div>`;
@@ -604,10 +605,24 @@ async function takeSequence() {
     state.photos[state.retakeIndex] = captureVideo(v);
     state.retakeIndex = -1;
   } else {
+    // Reset bersih total untuk sesi baru ini
     state.photos = [];
     state.recordedChunks = [];
+    state.videoBlob = null;
+    state.videoUrl = null;
+    state.freshUploadedVideoUrl = null;
+    state.freshUploadedPhotoUrl = null;
+
     try {
-      state.mediaRecorder = new MediaRecorder(state.stream, { mimeType: 'video/webm' });
+      let mimeType = 'video/mp4';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8,opus';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+      }
+
+      state.mediaRecorder = new MediaRecorder(state.stream, { mimeType: mimeType });
       state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.recordedChunks.push(e.data); };
       state.mediaRecorder.start();
     } catch (e) { console.log('Rekaman tidak didukung', e); }
@@ -621,11 +636,12 @@ async function takeSequence() {
   }
 
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-    await new Promise(r => {
+    await new Promise(resolveStop => {
       state.mediaRecorder.onstop = () => {
-        const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
-        state.videoUrl = URL.createObjectURL(blob);
-        r();
+        const recordedMime = state.mediaRecorder.mimeType || 'video/mp4';
+        state.videoBlob = new Blob(state.recordedChunks, { type: recordedMime });
+        state.videoUrl = URL.createObjectURL(state.videoBlob);
+        resolveStop();
       };
       state.mediaRecorder.stop();
     });
@@ -838,7 +854,6 @@ function initDragSwap() {
   const thumbs = container.querySelectorAll('.photo-thumb[draggable="true"]');
 
   thumbs.forEach(thumb => {
-    // --- Drag events (desktop) ---
     thumb.addEventListener('dragstart', handleDragStart);
     thumb.addEventListener('dragend', handleDragEnd);
     thumb.addEventListener('dragover', handleDragOver);
@@ -846,7 +861,6 @@ function initDragSwap() {
     thumb.addEventListener('dragleave', handleDragLeave);
     thumb.addEventListener('drop', handleDrop);
 
-    // --- Touch events (mobile) ---
     thumb.addEventListener('touchstart', handleTouchStart, { passive: false });
     thumb.addEventListener('touchmove', handleTouchMove, { passive: false });
     thumb.addEventListener('touchend', handleTouchEnd);
@@ -893,7 +907,6 @@ function handleDrop(e) {
   dragSrcSlot = null;
 }
 
-// --- Touch support for mobile drag-swap ---
 let touchSrcSlot = null;
 let touchClone = null;
 let touchStartX = 0;
@@ -908,7 +921,6 @@ function handleTouchStart(e) {
   touchStartX = touch.clientX;
   touchStartY = touch.clientY;
 
-  // Create floating clone
   touchClone = this.cloneNode(true);
   touchClone.style.position = 'fixed';
   touchClone.style.zIndex = '9999';
@@ -943,7 +955,6 @@ function handleTouchMove(e) {
       touchClone.style.top = (touch.clientY - this.offsetHeight / 2) + 'px';
     }
 
-    // Highlight drop target
     document.querySelectorAll('.photo-thumb').forEach(el => el.classList.remove('drag-over'));
     const target = document.elementFromPoint(touch.clientX, touch.clientY);
     if (target) {
@@ -964,7 +975,6 @@ function handleTouchEnd(e) {
   touchClone = null;
 
   if (!touchMoved) {
-    // Short tap — let the onclick handle it
     touchSrcSlot = null;
     return;
   }
@@ -988,12 +998,10 @@ function handleTouchEnd(e) {
 }
 
 function swapSlots(fromIdx, toIdx) {
-  // Tukar foto di assignedPhotos
   const temp = state.assignedPhotos[fromIdx];
   state.assignedPhotos[fromIdx] = state.assignedPhotos[toIdx];
   state.assignedPhotos[toIdx] = temp;
 
-  // Re-render preview tanpa reset assigned (skipInit = true)
   playBeep(600, 'triangle', 0.12);
   chooseFrame(true);
 }
@@ -1010,96 +1018,38 @@ async function drawResult() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const fNum = state.count;
-  
-  // 👉 GANTI BAGIAN SLOT DI SINI:
   let slots;
   const currentFramePath = ALL_FRAMES[state.frame];
   
   if (fNum === 3) {
     if (currentFramePath.includes('Frame_03_B')) {
-      slots = [
-        ['rr', 0.05, 0.16, 0.90, 0.31, 0.05], 
-        ['rr', 0.08, 0.47, 0.43, 0.28, 0.05], 
-        ['rr', 0.49, 0.47, 0.43, 0.28, 0.05]  
-      ];
+      slots = [['rr', 0.05, 0.16, 0.90, 0.31, 0.05], ['rr', 0.08, 0.47, 0.43, 0.28, 0.05], ['rr', 0.49, 0.47, 0.43, 0.28, 0.05]];
     } else {
-      slots = [
-        ['rr', 0.05, 0.13, 0.93, 0.35, 0.05], 
-        ['rr', 0.05, 0.52, 0.45, 0.28, 0.05], 
-        ['rr', 0.52, 0.52, 0.45, 0.28, 0.05]  
-      ];
+      slots = [['rr', 0.05, 0.13, 0.93, 0.35, 0.05], ['rr', 0.05, 0.52, 0.45, 0.28, 0.05], ['rr', 0.52, 0.52, 0.45, 0.28, 0.05]];
     }
   } else if (fNum === 4) {
-    // 👉 PENGATURAN KHUSUS UNTUK FRAME 4 (A dan B)
     if (currentFramePath.includes('Frame_04_B')) {
-      slots = [
-        ['rr', 0.03, 0.15, 0.47, 0.32, 0.02], // Kotak Kiri Atas B (Lebar ditambah ke kanan, radius dikecilkan jadi 0.02 agar sudut tidak putih)
-        ['rr', 0.50, 0.15, 0.45, 0.32, 0.02], // Kotak Kanan Atas B (radius 0.02)
-        ['rr', 0.03, 0.45, 0.47, 0.32, 0.02], // Kotak Kiri Bawah B (Lebar ditambah ke kanan, radius 0.02)
-        ['rr', 0.50, 0.45, 0.45, 0.32, 0.02]  // Kotak Kanan Bawah B (radius 0.02)
-      ];
+      slots = [['rr', 0.03, 0.15, 0.47, 0.32, 0.02], ['rr', 0.50, 0.15, 0.45, 0.32, 0.02], ['rr', 0.03, 0.45, 0.47, 0.32, 0.02], ['rr', 0.50, 0.45, 0.45, 0.32, 0.02]];
     } else {
-      slots = [
-        ['rr', 0.04, 0.17, 0.44, 0.31, 0.05], // Kotak Kiri Atas A (Default)
-        ['rr', 0.51, 0.17, 0.45, 0.31, 0.05], // Kotak Kanan Atas A (Default)
-        ['rr', 0.04, 0.48, 0.44, 0.33, 0.05], // Kotak Kiri Bawah A (Default)
-        ['rr', 0.51, 0.48, 0.45, 0.33, 0.05]  // Kotak Kanan Bawah A (Default)
-      ];
+      slots = [['rr', 0.04, 0.17, 0.44, 0.31, 0.05], ['rr', 0.51, 0.17, 0.45, 0.31, 0.05], ['rr', 0.04, 0.48, 0.44, 0.33, 0.05], ['rr', 0.51, 0.48, 0.45, 0.33, 0.05]];
     }
   } else if (fNum === 5) {
-    // 👉 PENGATURAN KHUSUS UNTUK FRAME 5 (A dan B)
     if (currentFramePath.includes('Frame_05_B')) {
-      slots = [
-        ['rr', 0.05, 0.17, 0.57, 0.66, 0.02], // Kotak Besar Kiri B (lebar & tinggi ditambah, radius 0.02)
-        ['rr', 0.62, 0.18, 0.35, 0.18, 0.02], // Kotak Kecil 1 Kanan B (lebar & tinggi ditambah, radius 0.02)
-        ['rr', 0.62, 0.33, 0.35, 0.18, 0.02], // Kotak Kecil 2 Kanan B (lebar & tinggi ditambah, radius 0.02)
-        ['rr', 0.62, 0.48, 0.35, 0.18, 0.02], // Kotak Kecil 3 Kanan B (lebar & tinggi ditambah, radius 0.02)
-        ['rr', 0.62, 0.63, 0.35, 0.18, 0.02]  // Kotak Kecil 4 Kanan B (lebar & tinggi ditambah, radius 0.02)
-      ];
+      slots = [['rr', 0.05, 0.17, 0.57, 0.66, 0.02], ['rr', 0.62, 0.18, 0.35, 0.18, 0.02], ['rr', 0.62, 0.33, 0.35, 0.18, 0.02], ['rr', 0.62, 0.48, 0.35, 0.18, 0.02], ['rr', 0.62, 0.63, 0.35, 0.18, 0.02]];
     } else {
-      slots = [
-        ['rr', 0.04, 0.18, 0.61, 0.62, 0.05], // Kotak Besar Kiri A (Default)
-        ['rr', 0.67, 0.18, 0.30, 0.14, 0.03], // Kotak Kecil 1 Kanan A (Default)
-        ['rr', 0.67, 0.33, 0.30, 0.13, 0.03], // Kotak Kecil 2 Kanan A (Default)
-        ['rr', 0.67, 0.48, 0.30, 0.13, 0.03], // Kotak Kecil 3 Kanan A (Default)
-        ['rr', 0.67, 0.63, 0.30, 0.13, 0.03]  // Kotak Kecil 4 Kanan A (Default)
-      ];
+      slots = [['rr', 0.04, 0.18, 0.61, 0.62, 0.05], ['rr', 0.67, 0.18, 0.30, 0.14, 0.03], ['rr', 0.67, 0.33, 0.30, 0.13, 0.03], ['rr', 0.67, 0.48, 0.30, 0.13, 0.03], ['rr', 0.67, 0.63, 0.30, 0.13, 0.03]];
     }
   } else if (fNum === 6) {
-    // 👉 PENGATURAN KHUSUS UNTUK FRAME 6 (A, B, C, D)
     if (currentFramePath.includes('Frame_06_C')) {
-      slots = [
-        ['rr', 0.05, 0.15, 0.46, 0.26, 0.02], // Slot Kiri Atas C
-        ['rr', 0.49, 0.15, 0.46, 0.26, 0.02], // Slot Kanan Atas C
-        ['rr', 0.05, 0.36, 0.46, 0.26, 0.02], // Slot Kiri Tengah C
-        ['rr', 0.49, 0.36, 0.46, 0.26, 0.02], // Slot Kanan Tengah C
-        ['rr', 0.05, 0.57, 0.46, 0.26, 0.02], // Slot Kiri Bawah C
-        ['rr', 0.49, 0.57, 0.46, 0.26, 0.02]  // Slot Kanan Bawah C
-      ];
+      slots = [['rr', 0.05, 0.15, 0.46, 0.26, 0.02], ['rr', 0.49, 0.15, 0.46, 0.26, 0.02], ['rr', 0.05, 0.36, 0.46, 0.26, 0.02], ['rr', 0.49, 0.36, 0.46, 0.26, 0.02], ['rr', 0.05, 0.57, 0.46, 0.26, 0.02], ['rr', 0.49, 0.57, 0.46, 0.26, 0.02]];
     } else if (currentFramePath.includes('Frame_06_D')) {
-      slots = [
-        ['rr', 0.05, 0.15, 0.46, 0.25, 0.02], // Slot Kiri Atas D (diperbesar & radius 0.02)
-        ['rr', 0.49, 0.15, 0.46, 0.25, 0.02], // Slot Kanan Atas D (diperbesar & radius 0.02)
-        ['rr', 0.05, 0.36, 0.46, 0.25, 0.02], // Slot Kiri Tengah D (diperbesar & radius 0.02)
-        ['rr', 0.49, 0.36, 0.46, 0.25, 0.02], // Slot Kanan Tengah D (diperbesar & radius 0.02)
-        ['rr', 0.05, 0.57, 0.46, 0.25, 0.02], // Slot Kiri Bawah D (diperbesar & radius 0.02)
-        ['rr', 0.49, 0.57, 0.46, 0.25, 0.02]  // Slot Kanan Bawah D (diperbesar & radius 0.02)
-      ];
+      slots = [['rr', 0.05, 0.15, 0.46, 0.25, 0.02], ['rr', 0.49, 0.15, 0.46, 0.25, 0.02], ['rr', 0.05, 0.36, 0.46, 0.25, 0.02], ['rr', 0.49, 0.36, 0.46, 0.25, 0.02], ['rr', 0.05, 0.57, 0.46, 0.25, 0.02], ['rr', 0.49, 0.57, 0.46, 0.25, 0.02]];
     } else {
-      // Default untuk Frame 06 A & B yang sudah kita atur pas sebelumnya
-      slots = [
-        ['rr', 0.08, 0.16, 0.40, 0.22, 0.05], // Slot Kiri Atas A/B
-        ['rr', 0.52, 0.16, 0.40, 0.22, 0.05], // Slot Kanan Atas A/B
-        ['rr', 0.08, 0.39, 0.40, 0.22, 0.05], // Slot Kiri Tengah A/B
-        ['rr', 0.52, 0.39, 0.40, 0.22, 0.05], // Slot Kanan Tengah A/B
-        ['rr', 0.08, 0.62, 0.40, 0.22, 0.05], // Slot Kiri Bawah A/B
-        ['rr', 0.52, 0.62, 0.40, 0.22, 0.05]  // Slot Kanan Bawah A/B
-      ];
+      slots = [['rr', 0.08, 0.16, 0.40, 0.22, 0.05], ['rr', 0.52, 0.16, 0.40, 0.22, 0.05], ['rr', 0.08, 0.39, 0.40, 0.22, 0.05], ['rr', 0.52, 0.39, 0.40, 0.22, 0.05], ['rr', 0.08, 0.62, 0.40, 0.22, 0.05], ['rr', 0.52, 0.62, 0.40, 0.22, 0.05]];
     }
   } else {
     slots = SLOT_MAP[fNum] || SLOT_MAP[1];
   }
-  // ---------------------------------
 
   const imgs = await Promise.all(slots.map(async (_, i) => {
     const src = state.assignedPhotos[i];
@@ -1157,7 +1107,7 @@ async function showFinal() {
   <div class="panel" style="margin-bottom:16px">
     <div class="panel-header">
       <div class="icon">🎉</div>
-      <div><h3>Foto & Live Video Kamu Sudah Jadi!</h3><div class="sub">Silakan simpan atau bagikan ke teman-temanmu.</div></div>
+      <div><h3>Foto & Live Video Kamu Sudah Jadi!</h3><div class="sub">Silakan simpan, cetak, atau bagikan ke teman-temanmu.</div></div>
     </div>
     <div class="final-grid">
       <div class="result-area"><canvas id="finalCanvas"></canvas></div>
@@ -1172,9 +1122,10 @@ async function showFinal() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
       <button class="btn-main btn-green" onclick="downloadPhoto()">⬇ Simpan Foto</button>
       ${state.videoUrl ? `<button class="btn-main btn-orange" onclick="downloadVideo()">📹 Simpan Video</button>` : ''}
-      <button class="btn-main btn-outline" onclick="sharePhoto()">📤 Bagikan</button>
-      <button class="btn-main btn-outline" onclick="makeQR()">📱 Buat Link & QR Code</button>
-      <button class="btn-main btn-outline" onclick="resetToStart()">📷 Buat Foto Baru</button>
+      <button class="btn-main btn-outline" style="border-color:#1a9e58;color:#0b4d2c" onclick="sharePhoto()">📤 Bagikan ke WA</button>
+      <button class="btn-main btn-outline" style="border-color:#1a9e58;color:#0b4d2c" onclick="print4R()">🖨️ Cetak Foto</button>
+      <button class="btn-main btn-outline" style="border-color:#1a9e58;color:#0b4d2c" onclick="makeQR()">📱 Buat Link & QR Code</button>
+      <button class="btn-main btn-outline" style="border-color:#1a9e58;color:#0b4d2c" onclick="resetToStart()">📷 Buat Foto Baru</button>
     </div>
     <div id="qrBox" class="qr-box hidden"></div>
   </div>`;
@@ -1188,7 +1139,38 @@ async function showFinal() {
   const ctx = c.getContext('2d');
 
   const fNum = state.count;
-  const slots = SLOT_MAP[fNum] || SLOT_MAP[1];
+  let slots;
+  const currentFramePath = ALL_FRAMES[state.frame];
+  
+  if (fNum === 3) {
+    if (currentFramePath.includes('Frame_03_B')) {
+      slots = [['rr', 0.05, 0.16, 0.90, 0.31, 0.05], ['rr', 0.08, 0.47, 0.43, 0.28, 0.05], ['rr', 0.49, 0.47, 0.43, 0.28, 0.05]];
+    } else {
+      slots = [['rr', 0.05, 0.13, 0.93, 0.35, 0.05], ['rr', 0.05, 0.52, 0.45, 0.28, 0.05], ['rr', 0.52, 0.52, 0.45, 0.28, 0.05]];
+    }
+  } else if (fNum === 4) {
+    if (currentFramePath.includes('Frame_04_B')) {
+      slots = [['rr', 0.03, 0.15, 0.47, 0.32, 0.02], ['rr', 0.50, 0.15, 0.45, 0.32, 0.02], ['rr', 0.03, 0.45, 0.47, 0.32, 0.02], ['rr', 0.50, 0.45, 0.45, 0.32, 0.02]];
+    } else {
+      slots = [['rr', 0.04, 0.17, 0.44, 0.31, 0.05], ['rr', 0.51, 0.17, 0.45, 0.31, 0.05], ['rr', 0.04, 0.48, 0.44, 0.33, 0.05], ['rr', 0.51, 0.48, 0.45, 0.33, 0.05]];
+    }
+  } else if (fNum === 5) {
+    if (currentFramePath.includes('Frame_05_B')) {
+      slots = [['rr', 0.05, 0.17, 0.57, 0.66, 0.02], ['rr', 0.62, 0.18, 0.35, 0.18, 0.02], ['rr', 0.62, 0.33, 0.35, 0.18, 0.02], ['rr', 0.62, 0.48, 0.35, 0.18, 0.02], ['rr', 0.62, 0.63, 0.35, 0.18, 0.02]];
+    } else {
+      slots = [['rr', 0.04, 0.18, 0.61, 0.62, 0.05], ['rr', 0.67, 0.18, 0.30, 0.14, 0.03], ['rr', 0.67, 0.33, 0.30, 0.13, 0.03], ['rr', 0.67, 0.48, 0.30, 0.13, 0.03], ['rr', 0.67, 0.63, 0.30, 0.13, 0.03]];
+    }
+  } else if (fNum === 6) {
+    if (currentFramePath.includes('Frame_06_C')) {
+      slots = [['rr', 0.05, 0.15, 0.46, 0.26, 0.02], ['rr', 0.49, 0.15, 0.46, 0.26, 0.02], ['rr', 0.05, 0.36, 0.46, 0.26, 0.02], ['rr', 0.49, 0.36, 0.46, 0.26, 0.02], ['rr', 0.05, 0.57, 0.46, 0.26, 0.02], ['rr', 0.49, 0.57, 0.46, 0.26, 0.02]];
+    } else if (currentFramePath.includes('Frame_06_D')) {
+      slots = [['rr', 0.05, 0.15, 0.46, 0.25, 0.02], ['rr', 0.49, 0.15, 0.46, 0.25, 0.02], ['rr', 0.05, 0.36, 0.46, 0.25, 0.02], ['rr', 0.49, 0.36, 0.46, 0.25, 0.02], ['rr', 0.05, 0.57, 0.46, 0.25, 0.02], ['rr', 0.49, 0.57, 0.46, 0.25, 0.02]];
+    } else {
+      slots = [['rr', 0.08, 0.16, 0.40, 0.22, 0.05], ['rr', 0.52, 0.16, 0.40, 0.22, 0.05], ['rr', 0.08, 0.39, 0.40, 0.22, 0.05], ['rr', 0.52, 0.39, 0.40, 0.22, 0.05], ['rr', 0.08, 0.62, 0.40, 0.22, 0.05], ['rr', 0.52, 0.62, 0.40, 0.22, 0.05]];
+    }
+  } else {
+    slots = SLOT_MAP[fNum] || SLOT_MAP[1];
+  }
 
   const imgs = await Promise.all(slots.map(async (_, i) => {
     const src = state.assignedPhotos[i];
@@ -1222,20 +1204,23 @@ async function showFinal() {
 function resetToStart() {
   state.step = 0;
   state.count = 4;
-  state.frame = 11;
+  state.frame = 10;
   state.photos = [];
   state.assignedPhotos = [];
   state.stream = null;
   state.retakeIndex = -1;
   state.slotMappingIndex = null;
+  state.videoBlob = null;
   state.videoUrl = null;
-  state.uploadedUrl = null;
+  state.freshUploadedVideoUrl = null;
+  state.freshUploadedPhotoUrl = null;
+  state.recordedChunks = [];
   renderStart();
 }
 
-function getData() {
+function getDataPNG() {
   try {
-    return document.getElementById('finalCanvas').toDataURL('image/jpeg', 0.85);
+    return document.getElementById('finalCanvas').toDataURL('image/png');
   } catch (e) {
     throw new Error("Penyimpanan diblokir browser.");
   }
@@ -1243,9 +1228,9 @@ function getData() {
 
 function downloadPhoto() {
   try {
-    const data = getData();
+    const data = getDataPNG();
     const a = document.createElement('a');
-    a.download = 'UKM-MATAF-' + Date.now() + '.jpg';
+    a.download = 'UKM-MATAF-' + Date.now() + '.png';
     a.href = data;
     document.body.appendChild(a);
     a.click();
@@ -1255,11 +1240,50 @@ function downloadPhoto() {
   }
 }
 
+function print4R() {
+  try {
+    const data = getDataPNG();
+    let oldFrame = document.getElementById('printIframe');
+    if (oldFrame) oldFrame.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'printIframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>Cetak Foto 4R</title>
+          <style>
+            @page { size: 4in 6in; margin: 0; }
+            body { margin: 0; padding: 0; width: 4in; height: 6in; display: flex; justify-content: center; align-items: center; background: #fff; }
+            img { width: 4in; height: 6in; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+          <img src="${data}" onload="setTimeout(() => { window.print(); }, 200);" />
+        </body>
+      </html>
+    `);
+    doc.close();
+  } catch (e) {
+    alert("Gagal mencetak: " + e.message);
+  }
+}
+
 function downloadVideo() {
   if (!state.videoUrl) { alert('Tidak ada video.'); return; }
   try {
     const a = document.createElement('a');
-    a.download = 'UKM-LiveVideo-' + Date.now() + '.webm';
+    a.download = 'UKM-LiveVideo-' + Date.now() + '.mp4';
     a.href = state.videoUrl;
     document.body.appendChild(a);
     a.click();
@@ -1269,12 +1293,20 @@ function downloadVideo() {
   }
 }
 
-async function uploadToCloudinary(fileData, resourceType = 'image') {
+async function uploadToCloudinaryFast(fileData, resourceType = 'image', customExt = '') {
   const cloudName = 'djjefvop';
   const uploadPreset = 'ml_default';
   const formData = new FormData();
   formData.append('file', fileData);
   formData.append('upload_preset', uploadPreset);
+  
+  // Membuat public_id unik dengan timestamp persis seperti unduh lokal agar akurat & tidak tertukar
+  const uniqueId = 'ukm_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  if (customExt) {
+    formData.append('public_id', uniqueId + customExt);
+  } else {
+    formData.append('public_id', uniqueId);
+  }
 
   const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
     method: 'POST',
@@ -1287,63 +1319,49 @@ async function uploadToCloudinary(fileData, resourceType = 'image') {
   throw new Error((json && json.error && json.error.message) || 'Upload gagal.');
 }
 
-async function sharePhoto() {
-  // Deteksi apakah pengguna menggunakan perangkat mobile (HP/Tablet)
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+async function getFreshPngPhotoUrl() {
+  if (state.freshUploadedPhotoUrl) return state.freshUploadedPhotoUrl;
+  const pngData = getDataPNG(); // Menggunakan format PNG persis seperti unduh foto
+  state.freshUploadedPhotoUrl = await uploadToCloudinaryFast(pngData, 'image', '.png');
+  return state.freshUploadedPhotoUrl;
+}
 
-  // Jika di DESKTOP: Gunakan fitur berbagi file multi-file (foto + video) seperti sebelumnya
-  if (!isMobile && navigator.share && navigator.canShare) {
-    try {
-      const data = getData();
-      const arr = data.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) { u8arr[n] = bstr.charCodeAt(n); }
-      const photoFile = new File([u8arr], 'UKM-MATAF-Photo.jpg', { type: mime });
-      const filesArray = [photoFile];
-
-      if (state.videoUrl && state.recordedChunks && state.recordedChunks.length > 0) {
-        const vBlob = new Blob(state.recordedChunks, { type: 'video/webm' });
-        filesArray.push(new File([vBlob], 'UKM-MATAF-Video.webm', { type: 'video/webm' }));
-      }
-
-      if (navigator.canShare({ files: filesArray })) {
-        await navigator.share({ files: filesArray });
-        return;
-      }
-    } catch (e) {
-      if (e.name === 'AbortError') return; // Batal dibagikan oleh user
-    }
+async function getFreshMp4VideoUrl() {
+  if (state.freshUploadedVideoUrl) return state.freshUploadedVideoUrl;
+  if (state.videoBlob) {
+    // Mengunggah Blob video asli sesi ini dengan ekstensi .mp4 agar instan dan akurat tanpa proses lambat
+    state.freshUploadedVideoUrl = await uploadToCloudinaryFast(state.videoBlob, 'video', '.mp4');
+    return state.freshUploadedVideoUrl;
   }
+  return '';
+}
 
-  // Jika di MOBILE (atau jika desktop menolak multi-file): Gunakan metode WhatsApp Tautan + Cloudinary
+async function sharePhoto() {
   const shareStatus = document.createElement('div');
   shareStatus.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;z-index:9999';
   shareStatus.innerHTML = `
     <div style="background:#fff;border-radius:20px;padding:32px 28px;text-align:center;max-width:360px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
       <div style="font-size:36px;animation:pulse 1s infinite">⏳</div>
       <b style="display:block;margin-top:12px;color:#0b4d2c;font-size:15px">Menyiapkan tautan WhatsApp...</b>
-      <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto ke server...</div>
+      <div id="shareProgress" style="font-size:12px;color:#5a7a68;margin-top:8px">Mengunggah foto & video sesi ini...</div>
       <button class="btn-main btn-outline" style="margin-top:16px;padding:8px 16px;font-size:12px" onclick="this.closest('div[style]').remove()">Batal</button>
     </div>`;
   document.body.appendChild(shareStatus);
 
   try {
-    const data = getData();
-    const photoUrl = await uploadToCloudinary(data, 'image');
-    
+    const photoUrl = await getFreshPngPhotoUrl();
+    const videoUrl = await getFreshMp4VideoUrl();
+
     if (shareStatus.parentNode) shareStatus.remove();
 
     let waMsg = '📸 *Foto Booth UKM Computer Education — MATAF UMC 2026* 📸\n\n';
-    waMsg += '🖼️ *Link Foto Kamu:*\n' + photoUrl + '\n';
-    if (state.videoUrl) {
-      waMsg += '\n🎬 _Video rekaman photobooth tersedia, silakan unduh melalui tombol Simpan Video di web ya!_\n';
+    waMsg += '🖼️ *Link Foto:*\n' + photoUrl + '\n';
+    if (videoUrl) {
+      waMsg += '\n🎬 *Link Live Video:*\n' + videoUrl + '\n';
     }
     waMsg += '\n🌿 _Bersama Menuju Digital Future_ — UKM Computer Education 🍃';
 
-    const waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(waMsg);
+    const waUrl = 'https://wa.me/?text=' + encodeURIComponent(waMsg);
     
     const a = document.createElement('a');
     a.href = waUrl;
@@ -1354,55 +1372,43 @@ async function sharePhoto() {
 
   } catch (e) {
     if (shareStatus.parentNode) shareStatus.remove();
-    alert("❌ Gagal membagikan foto ke WhatsApp:\n" + e.message);
+    alert("❌ Gagal membagikan ke WhatsApp:\n" + e.message);
   }
 }
 
 async function makeQR() {
   const box = document.getElementById('qrBox');
   box.classList.remove('hidden');
-  box.innerHTML = '<div style="padding:16px;text-align:center"><div style="font-size:28px;animation:pulse 1s infinite">⏳</div><b>Mengunggah foto ke Cloudinary...</b><div class="qr-sub">Mohon tunggu sebentar...</div></div>';
+  box.innerHTML = '<div style="padding:16px;text-align:center"><div style="font-size:28px;animation:pulse 1s infinite">⏳</div><b>Mengunggah foto & video sesi ini...</b><div class="qr-sub">Membuat QR Code akurat dan cepat...</div></div>';
 
   try {
-    const data = getData(); 
-    const cloudName = 'djjefvop'; 
-    const uploadPreset = 'ml_default'; 
-    
-    const formData = new FormData();
-    formData.append('file', data);
-    formData.append('upload_preset', uploadPreset);
+    const photoDlUrl = await getFreshPngPhotoUrl();
+    const videoDlUrl = await getFreshMp4VideoUrl();
 
-    const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-      method: 'POST',
-      body: formData
-    });
-
-    // Ambil teks terlebih dahulu untuk menghindari error jika respons bukan JSON valid
-    const responseText = await uploadRes.text();
-    let json;
-    try {
-      json = JSON.parse(responseText);
-    } catch (e) {
-      throw new Error('Gagal memproses respons server (bukan format JSON).');
-    }
-
-    if (uploadRes.ok && json.secure_url) {
-      const dlUrl = json.secure_url; 
-      state.uploadedUrl = dlUrl;
-
-      box.innerHTML = `
-        <div style="padding:8px">
-          <img alt="QR Code" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(dlUrl)}" style="width:160px;height:160px">
-          <b style="display:block;margin-top:8px">📱 Scan QR Code Foto!</b>
-          <div class="qr-sub" style="margin:6px 0">atau klik tautan berikut untuk melihat hasil foto:</div>
-          <a href="${dlUrl}" target="_blank" style="color:#0f7a45;font-weight:700;word-break:break-all;font-size:11px">${dlUrl}</a>
-          <div class="qr-sub" style="margin-top:6px;color:#ff9800">💡 Keterangan: Video rekaman tidak dapat dari QR Code, silakan unduh video melalui tombol "Simpan Video/Bagikan" di atas.</div>
+    let htmlContent = `
+      <div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;padding:12px 8px">
+        <div style="flex:1;min-width:140px;background:#fff;border-radius:12px;padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.05)">
+          <img alt="QR Foto" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(photoDlUrl)}" style="width:140px;height:140px;display:block;margin:0 auto">
+          <b style="display:block;margin-top:8px">📸 QR FOTO</b>
+          <a href="${photoDlUrl}" target="_blank" style="color:#0f7a45;font-weight:700;word-break:break-all;font-size:10px;display:block;margin-top:4px;line-height:1.2">Buka Link Foto</a>
         </div>`;
-    } else {
-      throw new Error((json && json.error && json.error.message) || 'Upload gagal ke Cloudinary');
+
+    if (videoDlUrl) {
+      htmlContent += `
+        <div style="flex:1;min-width:140px;background:#fff;border-radius:12px;padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.05)">
+          <img alt="QR Video" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(videoDlUrl)}" style="width:140px;height:140px;display:block;margin:0 auto">
+          <b style="display:block;margin-top:8px">🎬 QR VIDEO</b>
+          <a href="${videoDlUrl}" target="_blank" style="color:#ff9800;font-weight:700;word-break:break-all;font-size:10px;display:block;margin-top:4px;line-height:1.2">Buka Link Video</a>
+        </div>`;
     }
+
+    htmlContent += `</div>
+    <div class="qr-sub" style="margin-top:8px;color:#1a9e58;font-weight:600">💡 Scan menggunakan kamera HP kamu untuk menyimpan hasilnya!</div>`;
+
+    box.innerHTML = htmlContent;
+
   } catch (err) {
-    box.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:28px">❌</div><b style="color:#c62828">Gagal mengunggah foto</b><div class="qr-sub">Pesan error: ${err.message}</div><button class="btn-main btn-outline" style="margin-top:8px;font-size:12px;padding:8px" onclick="makeQR()">🔄 Coba Lagi</button></div>`;
+    box.innerHTML = `<div style="padding:16px;text-align:center"><div style="font-size:28px">❌</div><b style="color:#c62828">Gagal mengunggah foto/video</b><div class="qr-sub">Pesan error: ${err.message}</div><button class="btn-main btn-outline" style="margin-top:8px;font-size:12px;padding:8px" onclick="makeQR()">🔄 Coba Lagi</button></div>`;
   }
 }
 
